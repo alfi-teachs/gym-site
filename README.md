@@ -1,115 +1,176 @@
-# Gym Site — Static Website on AWS with CI/CD
+# E-12-LAB-EC2-AMI-Backup-Restore-
+This project demonstrates how to create an Amazon EC2 instance, configure a web server, generate an Amazon Machine Image (AMI) as a backup, and launch a new instance from that AMI.
 
-A static gym & fitness website hosted on **AWS S3 + CloudFront**, with automated deployments via **GitHub Actions** using **OIDC** (no stored AWS keys).
 
-🔗 **Live site:** https://YOUR-DISTRIBUTION.cloudfront.net
+# 🎯 Objectives
+Launch EC2 instance (t2.micro)
+Install and configure Apache (httpd)
+Create sample files
+Create AMI (backup of instance)
+Launch a new EC2 instance from AMI
+Verify data and configuration persistence
 
----
+# 🏗️ Architecture
+```bash
 
-## Architecture
+EC2 (t2.micro)
+   │
+   ├── Apache Installed
+   ├── Test Files Created
+   │
+   ▼
+AMI (Backup Image)
+   │
+   ▼
+EC2 (t3.micro from AMI)
 
-```mermaid
-flowchart LR
-    Dev[Developer] -->|git push| GH[GitHub Repo]
-    GH -->|triggers| GA[GitHub Actions]
-    GA -->|OIDC: assume IAM role| IAM[AWS IAM]
-    GA -->|aws s3 sync| S3[(S3 Bucket<br/>private)]
-    GA -->|create invalidation| CF[CloudFront]
-    CF -->|Origin Access Control| S3
-    User[Visitor] -->|HTTPS| CF
-```
-
-**Flow:**
-1. Code is pushed to the `main` branch.
-2. GitHub Actions authenticates to AWS using OpenID Connect (short-lived credentials).
-3. The workflow syncs site files to a private S3 bucket.
-4. The workflow invalidates the CloudFront cache so changes go live immediately.
-5. Visitors are served over HTTPS through CloudFront's global edge network.
-
----
-
-## Tech Stack
-
-| Layer | Tool |
-|---|---|
-| Frontend | HTML, CSS, JavaScript |
-| Storage | Amazon S3 |
-| CDN / HTTPS | Amazon CloudFront |
-| Access control | CloudFront Origin Access Control (OAC) |
-| CI/CD | GitHub Actions |
-| Authentication | AWS IAM + GitHub OIDC |
-| Version control | Git, GitHub |
-
----
-
-## Security Decisions
-
-- **Private S3 bucket** — "Block all public access" is enabled. The bucket is only readable by CloudFront via OAC, not directly from the internet.
-- **No long-lived AWS keys** — GitHub Actions assumes an IAM role through OIDC. No access keys are stored in GitHub secrets.
-- **Least-privilege IAM role** — the role can only write to this one bucket and invalidate this one distribution, and can only be assumed from this repo's `main` branch.
-- **HTTPS enforced** — CloudFront redirects all HTTP traffic to HTTPS.
-
----
-
-## Repository Structure
 
 ```
-gym-site/
-├── .github/
-│   └── workflows/
-│       └── deploy.yml      # CI/CD pipeline
-├── css/
-├── js/
-├── images/
-├── index.html
-└── README.md
+
+# ⚙️ Prerequisites
+AWS Account
+Key Pair (ssh22.pem)
+Basic knowledge of SSH
+
+# Step 1: Launch EC2 Instance
+
+- Name: web-server-1
+- AMI: Amazon Linux 2
+-  Instance Type: t2.micro
+-  Key Pair: ssh22
+-  Security Group: Allow SSH (22) and HTTP (80)
+
+# Step 2: Connect to EC2
+
+```bash 
+ssh -i ssh22.pem ec2-user@<Public-IP>
+
 ```
-
----
-
-## Deployment
-
-Deployments are fully automated. Any push to `main` triggers the pipeline:
 
 ```bash
-git add .
-git commit -m "Update homepage"
-git push origin main
+
+sudo su
+
 ```
-
-Pipeline steps (`.github/workflows/deploy.yml`):
-1. Checkout code
-2. Configure AWS credentials via OIDC
-3. `aws s3 sync . s3://<bucket> --delete` (excluding repo files like `.git`, `README.md`)
-4. `aws cloudfront create-invalidation --paths "/*"`
-
----
-
-## Run Locally
+# Step 3: Install Apache Web Server
+```bash
+yum install httpd -y
+```
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/gym-site.git
-cd gym-site
-# open index.html in a browser
+sysystemctl start httpd
 ```
 
----
 
-## Cost
+```bash
+systemctl start httpd
+```
 
-Runs within AWS Free Tier for low traffic. A billing budget alert is configured to catch unexpected charges.
+```bash
+systemctl enable httpd
+```
+# Step 4: Create Sample Files
 
----
+```bash
+cd /var/www/html
+```
 
-## Future Improvements
+# ADD HTML CONTENT
 
-- [ ] Infrastructure as Code with **Terraform** (S3, CloudFront, IAM, OIDC provider)
-- [ ] Custom domain with **Route 53** + **ACM** SSL certificate
-- [ ] HTML linting / link checking stage in the pipeline
-- [ ] Separate staging and production environments
+```bash
+vi index.html 
+```
 
----
+```bash
+touch file{1..10}
+```
 
-## Credits
+```bash
+ls
+```
 
-Website template: **Neogym** by [Free-CSS.com](https://www.free-css.com/). The front-end design is not my own work — this project focuses on the cloud hosting, security, and CI/CD pipeline.
+# Step 5: Create AMI (Backup)
+
+
+- EC2 → Instances → Select web-server-1
+-  Actions → Image → Create Image
+- Name: web-server-ami
+- Wait until AMI status = Available
+
+# Step 6: Stop Original Instance
+EC2 → Instances → Select web-server-1 → Stop
+
+# Step 7: Launch New Instance from AMI
+- EC2 → AMIs → Select web-server-ami → Launch Instance
+- Name: web-server-2
+- Instance Type: t3.micro
+-  Key Pair: ssh22
+-  Security Group: Allow SSH (22) and HTTP (80)
+
+  # Step 8: Connect to New Instance
+  
+  ```bash 
+  ssh -i ssh22.pem ec2-user@<New-Public-IP>
+
+```
+
+```bash
+sudo su
+
+```
+
+# Step 9: Verify Apache Service
+
+```bash
+
+systemctl status httpd
+
+```
+
+# Step 10: Verify Files
+
+```bash
+
+cd /var/www/html
+
+```
+
+```bash
+ls
+
+```
+
+# Expected Output
+
+file1 file2 file3 file4 file5 file6 file7 file8 file9 file10
+
+# 🌐 Testing (Optional)
+
+Open browser:
+
+``` bash
+http://<New-Public-IP>
+
+```
+
+# 🧠 Key Learnings
+AMI acts as a full backup of EC2 instance
+It includes:
+Operating System
+Installed packages (Apache)
+Files and configurations
+You can launch multiple identical instances using the same AMI
+Useful for:
+Disaster Recovery
+Auto Scaling
+Environment replication
+
+
+# ⭐ Final Thoughts
+
+This lab reflects a real-world cloud practice where systems are not rebuilt manually but replicated using images. It’s a foundational concept behind scalable and reliable cloud infrastructure.
+
+
+
+
+
