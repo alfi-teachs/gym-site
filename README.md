@@ -1,176 +1,109 @@
-# E-12-LAB-EC2-AMI-Backup-Restore-
-This project demonstrates how to create an Amazon EC2 instance, configure a web server, generate an Amazon Machine Image (AMI) as a backup, and launch a new instance from that AMI.
+# Gym Site — Static Website on AWS with GitHub Actions CI/CD
 
+A static gym website hosted on **Amazon S3 + CloudFront**, deployed automatically on every push to `main` by **GitHub Actions**. Authentication to AWS uses **GitHub OIDC** — no AWS access keys are stored anywhere.
 
-# 🎯 Objectives
-Launch EC2 instance (t2.micro)
-Install and configure Apache (httpd)
-Create sample files
-Create AMI (backup of instance)
-Launch a new EC2 instance from AMI
-Verify data and configuration persistence
+🔗 **Live site:** https://d1iwv60x17x8ve.cloudfront.net
 
-# 🏗️ Architecture
-```bash
+![Deploy](https://github.com/alfi-teachs/gym-site/actions/workflows/deploy.yml/badge.svg)
 
-EC2 (t2.micro)
-   │
-   ├── Apache Installed
-   ├── Test Files Created
-   │
-   ▼
-AMI (Backup Image)
-   │
-   ▼
-EC2 (t3.micro from AMI)
+---
 
+## Architecture
 
+```mermaid
+flowchart LR
+    Dev[Developer] -->|git push| GH[GitHub]
+    GH --> GA[GitHub Actions]
+    GA -->|OIDC token| STS[AWS STS]
+    STS -->|temporary credentials| GA
+    GA -->|aws s3 sync| S3[(S3 bucket - private)]
+    GA -->|create invalidation| CF[CloudFront]
+    CF -->|Origin Access Control| S3
+    User[Visitor] -->|HTTPS| CF
 ```
 
-# ⚙️ Prerequisites
-AWS Account
-Key Pair (ssh22.pem)
-Basic knowledge of SSH
+**How a deploy works**
 
-# Step 1: Launch EC2 Instance
+1. A push to `main` that changes `site/` triggers the workflow.
+2. GitHub issues a signed OIDC token; AWS STS verifies it against the IAM role's trust policy and returns credentials valid for one hour.
+3. The workflow syncs `site/` to the private S3 bucket (`--delete` removes files deleted from the repo).
+4. The CloudFront cache is invalidated so changes go live immediately.
+5. A smoke test requests the live URL and fails the pipeline if it doesn't return HTTP 200.
 
-- Name: web-server-1
-- AMI: Amazon Linux 2
--  Instance Type: t2.micro
--  Key Pair: ssh22
--  Security Group: Allow SSH (22) and HTTP (80)
+---
 
-# Step 2: Connect to EC2
+## Tech Stack
 
-```bash 
-ssh -i ssh22.pem ec2-user@<Public-IP>
+| Area | Tools |
+|---|---|
+| Hosting | Amazon S3, Amazon CloudFront |
+| CI/CD | GitHub Actions |
+| Identity & access | AWS IAM, GitHub OIDC, CloudFront Origin Access Control |
+| Frontend | HTML, CSS, JavaScript |
 
-```
+---
 
-```bash
+## Security Decisions
 
-sudo su
+| Decision | Why |
+|---|---|
+| **Private S3 bucket** (Block Public Access on, ACLs disabled) | Files can't be fetched directly from S3, bypassing HTTPS and caching. |
+| **Origin Access Control** with bucket policy scoped to one distribution ARN | Only this CloudFront distribution can read the bucket. |
+| **GitHub OIDC instead of access keys** | No long-lived credentials to leak or rotate; each run gets credentials that expire in 1 hour. |
+| **Trust policy pinned to the immutable repo subject** (`repo:owner@id/repo@id:ref:refs/heads/main`) | Only the `main` branch of this exact repository can deploy. A deleted and recreated repo with the same name gets new IDs and is rejected. |
+| **Least-privilege IAM policy** | The role can only list/write this bucket and invalidate this distribution. |
+| **HTTPS enforced** | CloudFront redirects HTTP to HTTPS. |
+| **S3 versioning** | Previous file versions are kept for rollback after a bad deploy. |
 
-```
-# Step 3: Install Apache Web Server
-```bash
-yum install httpd -y
-```
+---
 
-```bash
-sysystemctl start httpd
-```
-
-
-```bash
-systemctl start httpd
-```
-
-```bash
-systemctl enable httpd
-```
-# Step 4: Create Sample Files
-
-```bash
-cd /var/www/html
-```
-
-# ADD HTML CONTENT
-
-```bash
-vi index.html 
-```
-
-```bash
-touch file{1..10}
-```
-
-```bash
-ls
-```
-
-# Step 5: Create AMI (Backup)
-
-
-- EC2 → Instances → Select web-server-1
--  Actions → Image → Create Image
-- Name: web-server-ami
-- Wait until AMI status = Available
-
-# Step 6: Stop Original Instance
-EC2 → Instances → Select web-server-1 → Stop
-
-# Step 7: Launch New Instance from AMI
-- EC2 → AMIs → Select web-server-ami → Launch Instance
-- Name: web-server-2
-- Instance Type: t3.micro
--  Key Pair: ssh22
--  Security Group: Allow SSH (22) and HTTP (80)
-
-  # Step 8: Connect to New Instance
-  
-  ```bash 
-  ssh -i ssh22.pem ec2-user@<New-Public-IP>
+## Repository Structure
 
 ```
-
-```bash
-sudo su
-
+gym-site/
+├── .github/workflows/
+│   └── deploy.yml              # CI/CD pipeline
+├── docs/
+│   ├── aws-setup.md            # S3, CloudFront, OIDC provider, IAM role
+│   ├── github-setup.md         # repo, variables, workflow
+│   └── troubleshooting.md      # problems hit during the build and how they were fixed
+├── site/                       # website files (deployed to S3)
+│   ├── index.html
+│   ├── contact.html
+│   ├── trainer.html
+│   ├── why.html
+│   └── css/  js/  images/
+└── README.md
 ```
 
-# Step 9: Verify Apache Service
+---
 
-```bash
+## Setup Guides
 
-systemctl status httpd
+- **[AWS setup](docs/aws-setup.md)** — S3 bucket, CloudFront with OAC, GitHub OIDC provider, IAM deploy role
+- **[GitHub setup](docs/github-setup.md)** — repository, Actions variables, deploy workflow
+- **[Troubleshooting](docs/troubleshooting.md)** — real issues encountered and how they were diagnosed
 
-```
+---
 
-# Step 10: Verify Files
+## What I Learned
 
-```bash
+- Designing a static hosting setup where the storage layer is never publicly exposed.
+- Replacing static cloud credentials with federated, short-lived identity (OIDC).
+- Debugging IAM trust failures by inspecting the actual token claims instead of guessing.
+- Testing infrastructure one layer at a time (S3 → CloudFront → IAM → pipeline) to isolate failures.
 
-cd /var/www/html
+---
 
-```
+## Future Improvements
 
-```bash
-ls
+- [ ] Rebuild the infrastructure as code with **Terraform**
+- [ ] Custom domain with **Route 53** + **ACM** certificate
+- [ ] Security headers via a CloudFront response headers policy
+- [ ] Separate staging environment for pull requests
 
-```
+---
 
-# Expected Output
+## Credits
 
-file1 file2 file3 file4 file5 file6 file7 file8 file9 file10
-
-# 🌐 Testing (Optional)
-
-Open browser:
-
-``` bash
-http://<New-Public-IP>
-
-```
-
-# 🧠 Key Learnings
-AMI acts as a full backup of EC2 instance
-It includes:
-Operating System
-Installed packages (Apache)
-Files and configurations
-You can launch multiple identical instances using the same AMI
-Useful for:
-Disaster Recovery
-Auto Scaling
-Environment replication
-
-
-# ⭐ Final Thoughts
-
-This lab reflects a real-world cloud practice where systems are not rebuilt manually but replicated using images. It’s a foundational concept behind scalable and reliable cloud infrastructure.
-
-
-
-
-
+Website template: **Neogym** by [Free-CSS.com](https://www.free-css.com/). The front-end design is not my work — this project covers the AWS infrastructure, security and CI/CD pipeline.
